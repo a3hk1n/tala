@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1"
+    />
+    <title>قلک طلایی | سامانه مدیریت پس‌انداز طلا</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+    <link
+      href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css"
+      rel="stylesheet"
+      type="text/css"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!-- ============ TOAST CONTAINER ============ -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- ============ CONFIRM DIALOG ============ -->
+    <div id="confirmOverlay" class="modal-overlay hidden">
+      <div class="modal confirm-modal">
+        <div class="confirm-icon" id="confirmIcon">!</div>
+        <h3 id="confirmTitle">آیا مطمئن هستید؟</h3>
+        <p id="confirmMessage">این عملیات قابل بازگشت نیست.</p>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" id="confirmCancelBtn">انصراف</button>
+          <button class="btn btn-danger" id="confirmOkBtn">تایید</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ LOGIN SCREEN ============ -->
+    <div id="loginScreen" class="login-screen">
+      <div class="login-bg-glow"></div>
+      <form class="login-card glass" id="loginForm" autocomplete="off">
+        <div class="login-logo">
+          <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+            <circle
+              cx="32"
+              cy="32"
+              r="30"
+              stroke="url(#goldGrad)"
+              stroke-width="3"
+            />
+            <path
+              d="M32 14 L44 24 L44 40 L32 50 L20 40 L20 24 Z"
+              stroke="url(#goldGrad)"
+              stroke-width="2.5"
+              fill="none"
+            />
+            <circle cx="32" cy="32" r="7" fill="url(#goldGrad)" />
+            <defs>
+              <linearGradient id="goldGrad" x1="0" y1="0" x2="64" y2="64">
+                <stop offset="0" stop-color="#F2C94C" />
+                <stop offset="1" stop-color="#D4AF37" />
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        <h1>قلک طلایی</h1>
+        <p class="login-sub">سامانه مدیریت پس‌انداز طلای مشتریان</p>
+
+        <div class="form-group">
+          <label for="loginUsername">نام کاربری</label>
+          <input
+            type="text"
+            id="loginUsername"
+            placeholder="نام کاربری خود را وارد کنید"
+            required
+          />
+        </div>
+        <div class="form-group">
+          <label for="loginPassword">رمز عبور</label>
+          <input
+            type="password"
+            id="loginPassword"
+            placeholder="رمز عبور خود را وارد کنید"
+            required
+          />
+        </div>
+        <div class="form-error" id="loginError"></div>
+        <button type="submit" class="btn btn-gold btn-block">
+          ورود به سامانه
+        </button>
+        <!-- <p class="login-hint">
+          دسترسی آزمایشی: admin1 / admin2 / manager — رمز: 123456
+        </p> -->
+      </form>
+    </div>
+
+    <!-- ============ APP SHELL ============ -->
+    <div id="appShell" class="app-shell hidden">
+      <!-- SIDEBAR -->
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-brand">
+          <svg width="36" height="36" viewBox="0 0 64 64" fill="none">
+            <circle
+              cx="32"
+              cy="32"
+              r="30"
+              stroke="url(#goldGrad2)"
+              stroke-width="3"
+            />
+            <path
+              d="M32 14 L44 24 L44 40 L32 50 L20 40 L20 24 Z"
+              stroke="url(#goldGrad2)"
+              stroke-width="2.5"
+              fill="none"
+            />
+            <circle cx="32" cy="32" r="7" fill="url(#goldGrad2)" />
+            <defs>
+              <linearGradient id="goldGrad2" x1="0" y1="0" x2="64" y2="64">
+                <stop offset="0" stop-color="#F2C94C" />
+                <stop offset="1" stop-color="#D4AF37" />
+              </linearGradient>
+            </defs>
+          </svg>
+          <div class="brand-text">
+            <strong id="businessNameDisplay">قلک طلایی</strong>
+            <span>پنل مدیریت</span>
+          </div>
+        </div>
+
+        <nav class="sidebar-nav" id="sidebarNav">
+          <button class="nav-item active" data-section="dashboard">
+            <span class="nav-ico">🏠</span><span>داشبورد</span>
+          </button>
+          <button class="nav-item" data-section="customers">
+            <span class="nav-ico">👤</span><span>مشتریان</span>
+          </button>
+          <button class="nav-item" data-section="ledger">
+            <span class="nav-ico">📒</span><span>دفتر حساب</span>
+          </button>
+          <button class="nav-item" data-section="deposit">
+            <span class="nav-ico">💰</span><span>ثبت واریز</span>
+          </button>
+          <button class="nav-item" data-section="withdraw">
+            <span class="nav-ico">💸</span><span>ثبت برداشت</span>
+          </button>
+          <button class="nav-item" data-section="reports">
+            <span class="nav-ico">📈</span><span>گزارش‌ها</span>
+          </button>
+          <button class="nav-item" data-section="stats">
+            <span class="nav-ico">📊</span><span>آمار</span>
+          </button>
+          <button class="nav-item" data-section="sms">
+            <span class="nav-ico">📨</span><span>پیامک‌ها</span>
+          </button>
+          <button class="nav-item" data-section="settings">
+            <span class="nav-ico">⚙</span><span>تنظیمات</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <div class="gold-price-mini">
+            <span>قیمت هر گرم طلا</span>
+            <strong id="sidebarGoldPrice">--</strong>
+          </div>
+        </div>
+      </aside>
+
+      <!-- MAIN -->
+      <div class="main-wrap">
+        <!-- TOPBAR -->
+        <header class="topbar">
+          <button class="hamburger" id="hamburgerBtn" aria-label="منو">
+            <span></span><span></span><span></span>
+          </button>
+          <div class="global-search">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <circle cx="11" cy="11" r="7" stroke="#9CA3AF" stroke-width="2" />
+              <path
+                d="M21 21L16.65 16.65"
+                stroke="#9CA3AF"
+                stroke-width="2"
+                stroke-linecap="round"
+              />
+            </svg>
+            <input
+              type="text"
+              id="globalSearchInput"
+              placeholder="جستجوی مشتری بر اساس نام، موبایل یا کد ملی..."
+            />
+            <div class="search-results hidden" id="searchResultsBox"></div>
+          </div>
+          <div class="topbar-right">
+            <span class="operator-badge">
+              <span class="operator-dot"></span>
+              <span id="operatorNameDisplay">اپراتور</span>
+            </span>
+            <button class="btn btn-ghost btn-sm" id="logoutBtn">خروج</button>
+          </div>
+        </header>
+
+        <main class="content" id="contentArea">
+          <!-- ===== DASHBOARD ===== -->
+          <section class="page active" id="page-dashboard">
+            <div class="page-head">
+              <h2>داشبورد مدیریت</h2>
+              <p class="page-sub">نمای کلی از وضعیت قلک طلایی مشتریان</p>
+            </div>
+
+            <div class="stat-grid" id="statGrid"></div>
+
+            <div class="grid-2col">
+              <div class="card glass">
+                <div class="card-head">
+                  <h3>روند واریز و برداشت (۷ روز اخیر)</h3>
+                </div>
+                <canvas id="trendChart" height="220"></canvas>
+              </div>
+              <div class="card glass">
+                <div class="card-head"><h3>ترکیب تراکنش‌ها</h3></div>
+                <canvas id="pieChart" height="220"></canvas>
+              </div>
+            </div>
+
+            <div class="card glass">
+              <div class="card-head"><h3>آخرین فعالیت‌ها</h3></div>
+              <div class="table-wrap">
+                <table class="data-table" id="recentActivityTable">
+                  <thead>
+                    <tr>
+                      <th>تاریخ</th>
+                      <th>مشتری</th>
+                      <th>نوع</th>
+                      <th>مبلغ (تومان)</th>
+                      <th>مقدار طلا</th>
+                      <th>اپراتور</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <!-- ===== CUSTOMERS ===== -->
+          <section class="page" id="page-customers">
+            <div class="page-head row-between">
+              <div>
+                <h2>مدیریت مشتریان</h2>
+                <p class="page-sub">افزودن، ویرایش و مشاهده اطلاعات مشتریان</p>
+              </div>
+              <button class="btn btn-gold" id="addCustomerBtn">
+                + افزودن مشتری
+              </button>
+            </div>
+
+            <div class="card glass">
+              <div class="toolbar">
+                <input
+                  type="text"
+                  id="customerSearchInput"
+                  class="input"
+                  placeholder="جستجو بر اساس نام، موبایل یا کد ملی..."
+                />
+                <select id="customerSortSelect" class="input select-input">
+                  <option value="newest">جدیدترین</option>
+                  <option value="name">نام (الفبا)</option>
+                  <option value="balance">موجودی طلا</option>
+                </select>
+              </div>
+              <div class="table-wrap">
+                <table class="data-table" id="customersTable">
+                  <thead>
+                    <tr>
+                      <th>نام مشتری</th>
+                      <th>موبایل</th>
+                      <th>کد ملی</th>
+                      <th>تاریخ عضویت</th>
+                      <th>موجودی طلا</th>
+                      <th>عملیات</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+              <div class="empty-state hidden" id="customersEmptyState"></div>
+            </div>
+          </section>
+
+          <!-- ===== LEDGER ===== -->
+          <section class="page" id="page-ledger">
+            <div class="page-head">
+              <h2>دفتر حساب مشتری</h2>
+              <p class="page-sub">
+                دفترچه حساب دیجیتال مانند دفترچه سنتی طلافروشی
+              </p>
+            </div>
+
+            <div class="card glass" id="ledgerNoCustomer">
+              <div class="empty-state">
+                <div class="empty-illustration">📒</div>
+                <h3>مشتری انتخاب نشده</h3>
+                <p>
+                  برای مشاهده دفتر حساب، از بخش «مشتریان» یک مشتری را انتخاب
+                  کنید.
+                </p>
+                <button class="btn btn-gold" data-goto="customers">
+                  رفتن به مشتریان
+                </button>
+              </div>
+            </div>
+
+            <div id="ledgerContent" class="hidden">
+              <div class="ledger-profile card glass">
+                <div class="ledger-profile-top">
+                  <div class="ledger-avatar" id="ledgerAvatar">?</div>
+                  <div class="ledger-info">
+                    <h3 id="ledgerCustomerName">--</h3>
+                    <span id="ledgerCustomerMobile">--</span>
+                  </div>
+                  <div class="ledger-balance-box">
+                    <span>موجودی طلا</span>
+                    <strong id="ledgerBalanceValue">0.0000 گرم</strong>
+                  </div>
+                </div>
+                <div class="ledger-profile-grid">
+                  <div>
+                    <span>کد ملی</span
+                    ><strong id="ledgerNationalCode">--</strong>
+                  </div>
+                  <div>
+                    <span>تاریخ عضویت</span
+                    ><strong id="ledgerJoinDate">--</strong>
+                  </div>
+                  <div>
+                    <span>کل واریزی</span
+                    ><strong id="ledgerTotalDeposit">--</strong>
+                  </div>
+                  <div>
+                    <span>کل برداشت</span
+                    ><strong id="ledgerTotalWithdraw">--</strong>
+                  </div>
+                  <div>
+                    <span>آخرین تراکنش</span
+                    ><strong id="ledgerLastTx">--</strong>
+                  </div>
+                  <div>
+                    <span>آدرس</span><strong id="ledgerAddress">--</strong>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card glass">
+                <div class="card-head row-between">
+                  <h3>تراکنش‌ها</h3>
+                  <div class="ledger-actions">
+                    <button
+                      class="btn btn-success btn-sm"
+                      id="ledgerDepositBtn"
+                    >
+                      💰 واریز جدید
+                    </button>
+                    <button
+                      class="btn btn-danger btn-sm"
+                      id="ledgerWithdrawBtn"
+                    >
+                      💸 برداشت جدید
+                    </button>
+                  </div>
+                </div>
+                <div class="table-wrap">
+                  <table class="data-table ledger-table">
+                    <thead>
+                      <tr>
+                        <th>تاریخ</th>
+                        <th>نوع عملیات</th>
+                        <th>مبلغ</th>
+                        <th>قیمت هر گرم</th>
+                        <th>مقدار طلا</th>
+                        <th>موجودی طلا</th>
+                        <th>اپراتور</th>
+                        <th>توضیحات</th>
+                      </tr>
+                    </thead>
+                    <tbody id="ledgerTableBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ===== DEPOSIT ===== -->
+          <section class="page" id="page-deposit">
+            <div class="page-head">
+              <h2>ثبت واریز</h2>
+              <p class="page-sub">افزودن طلا به قلک مشتری بر اساس قیمت روز</p>
+            </div>
+            <div class="card glass form-card">
+              <div class="form-group">
+                <label>انتخاب مشتری</label>
+                <select
+                  id="depositCustomerSelect"
+                  class="input select-input"
+                ></select>
+              </div>
+              <div class="form-group">
+                <label>مبلغ واریزی (تومان)</label>
+                <input
+                  type="text"
+                  inputmode="numeric"
+                  id="depositAmountInput"
+                  class="input"
+                  placeholder="مثال: 500,000"
+                />
+              </div>
+              <div class="form-group">
+                <label>توضیحات (اختیاری)</label>
+                <textarea
+                  id="depositDescInput"
+                  class="input"
+                  rows="2"
+                  placeholder="توضیحات تراکنش..."
+                ></textarea>
+              </div>
+              <div class="calc-preview" id="depositPreview">
+                <div>
+                  <span>قیمت هر گرم طلا</span
+                  ><strong id="depositGoldPriceText">--</strong>
+                </div>
+                <div>
+                  <span>مقدار طلای خریداری شده</span
+                  ><strong id="depositGoldAmountText">0.0000 گرم</strong>
+                </div>
+                <div>
+                  <span>موجودی جدید</span
+                  ><strong id="depositNewBalanceText">0.0000 گرم</strong>
+                </div>
+              </div>
+              <div class="form-error" id="depositError"></div>
+              <button class="btn btn-success btn-block" id="submitDepositBtn">
+                ثبت واریز
+              </button>
+            </div>
+          </section>
+
+          <!-- ===== WITHDRAW ===== -->
+          <section class="page" id="page-withdraw">
+            <div class="page-head">
+              <h2>ثبت برداشت</h2>
+              <p class="page-sub">کسر طلا از موجودی مشتری بر اساس قیمت روز</p>
+            </div>
+            <div class="card glass form-card">
+              <div class="form-group">
+                <label>انتخاب مشتری</label>
+                <select
+                  id="withdrawCustomerSelect"
+                  class="input select-input"
+                ></select>
+              </div>
+              <div class="form-group">
+                <label>مبلغ برداشت (تومان)</label>
+                <input
+                  type="text"
+                  inputmode="numeric"
+                  id="withdrawAmountInput"
+                  class="input"
+                  placeholder="مثال: 1,000,000"
+                />
+              </div>
+              <div class="form-group">
+                <label>توضیحات (اختیاری)</label>
+                <textarea
+                  id="withdrawDescInput"
+                  class="input"
+                  rows="2"
+                  placeholder="توضیحات تراکنش..."
+                ></textarea>
+              </div>
+              <div class="calc-preview" id="withdrawPreview">
+                <div>
+                  <span>قیمت هر گرم طلا</span
+                  ><strong id="withdrawGoldPriceText">--</strong>
+                </div>
+                <div>
+                  <span>موجودی فعلی</span
+                  ><strong id="withdrawCurrentBalanceText">0.0000 گرم</strong>
+                </div>
+                <div>
+                  <span>مقدار طلای کسر شده</span
+                  ><strong id="withdrawGoldAmountText">0.0000 گرم</strong>
+                </div>
+                <div>
+                  <span>موجودی باقیمانده</span
+                  ><strong id="withdrawNewBalanceText">0.0000 گرم</strong>
+                </div>
+              </div>
+              <div class="form-error" id="withdrawError"></div>
+              <button class="btn btn-danger btn-block" id="submitWithdrawBtn">
+                ثبت برداشت
+              </button>
+            </div>
+          </section>
+
+          <!-- ===== REPORTS ===== -->
+          <section class="page" id="page-reports">
+            <div class="page-head">
+              <h2>گزارش‌ها</h2>
+              <p class="page-sub">گزارش‌های تحلیلی از عملکرد قلک طلایی</p>
+            </div>
+            <div class="stat-grid" id="reportStatGrid"></div>
+            <div class="card glass">
+              <div class="card-head row-between">
+                <h3>گزارش تفکیکی</h3>
+                <div class="toolbar" style="margin: 0">
+                  <select id="reportRangeSelect" class="input select-input">
+                    <option value="daily">گزارش روزانه</option>
+                    <option value="monthly">گزارش ماهانه</option>
+                    <option value="yearly">گزارش سالانه</option>
+                  </select>
+                </div>
+              </div>
+              <div class="table-wrap">
+                <table class="data-table" id="reportTable">
+                  <thead>
+                    <tr>
+                      <th>بازه</th>
+                      <th>تعداد واریز</th>
+                      <th>مجموع واریز</th>
+                      <th>تعداد برداشت</th>
+                      <th>مجموع برداشت</th>
+                      <th>طلای خالص جابجا شده</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="card glass">
+              <div class="card-head"><h3>فعال‌ترین مشتریان</h3></div>
+              <div class="table-wrap">
+                <table class="data-table" id="topCustomersTable">
+                  <thead>
+                    <tr>
+                      <th>رتبه</th>
+                      <th>نام مشتری</th>
+                      <th>تعداد تراکنش</th>
+                      <th>موجودی طلا</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <!-- ===== STATS ===== -->
+          <section class="page" id="page-stats">
+            <div class="page-head">
+              <h2>آمار کلی</h2>
+              <p class="page-sub">شاخص‌های کلیدی عملکرد سامانه</p>
+            </div>
+            <div class="grid-2col">
+              <div class="card glass">
+                <div class="card-head"><h3>رشد مشتریان</h3></div>
+                <canvas id="growthChart" height="220"></canvas>
+              </div>
+              <div class="card glass">
+                <div class="card-head"><h3>مقایسه واریز/برداشت ماهانه</h3></div>
+                <canvas id="barChart" height="220"></canvas>
+              </div>
+            </div>
+          </section>
+
+          <!-- ===== SMS ===== -->
+          <section class="page" id="page-sms">
+            <div class="page-head">
+              <h2>پیامک‌ها</h2>
+              <p class="page-sub">
+                پیش‌نمایش پیامک‌های ارسالی به مشتریان (نمایشی)
+              </p>
+            </div>
+            <div class="card glass">
+              <div class="table-wrap">
+                <table class="data-table" id="smsTable">
+                  <thead>
+                    <tr>
+                      <th>تاریخ</th>
+                      <th>مشتری</th>
+                      <th>موبایل</th>
+                      <th>متن پیامک</th>
+                      <th>وضعیت</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+              <div class="empty-state hidden" id="smsEmptyState"></div>
+            </div>
+          </section>
+
+          <!-- ===== SETTINGS ===== -->
+          <section class="page" id="page-settings">
+            <div class="page-head">
+              <h2>تنظیمات</h2>
+              <p class="page-sub">پیکربندی کلی سامانه</p>
+            </div>
+
+            <div class="grid-2col">
+              <div class="card glass form-card">
+                <div class="card-head"><h3>قیمت طلا</h3></div>
+                <div class="form-group">
+                  <label>قیمت هر گرم طلا (تومان)</label>
+                  <input
+                    type="text"
+                    inputmode="numeric"
+                    id="settingsGoldPriceInput"
+                    class="input"
+                    placeholder="مثال: 8,250,000"
+                  />
+                </div>
+                <button class="btn btn-gold" id="saveGoldPriceBtn">
+                  ذخیره قیمت طلا
+                </button>
+              </div>
+
+              <div class="card glass form-card">
+                <div class="card-head"><h3>اطلاعات کسب‌وکار</h3></div>
+                <div class="form-group">
+                  <label>نام کسب‌وکار</label>
+                  <input
+                    type="text"
+                    id="settingsBusinessNameInput"
+                    class="input"
+                    placeholder="نام طلافروشی"
+                  />
+                </div>
+                <div class="form-group toggle-row">
+                  <label>وضعیت پیامک</label>
+                  <label class="switch">
+                    <input type="checkbox" id="settingsSmsToggle" />
+                    <span class="slider"></span>
+                  </label>
+                </div>
+                <button class="btn btn-gold" id="saveBusinessInfoBtn">
+                  ذخیره تنظیمات
+                </button>
+              </div>
+            </div>
+
+            <div class="card glass">
+              <div class="card-head">
+                <h3>پشتیبان‌گیری و بازیابی داده‌ها</h3>
+              </div>
+              <div class="settings-backup-row">
+                <button class="btn btn-ghost" id="exportJsonBtn">
+                  📤 خروجی JSON
+                </button>
+                <label class="btn btn-ghost" for="importJsonInput"
+                  >📥 ورودی JSON</label
+                >
+                <input
+                  type="file"
+                  id="importJsonInput"
+                  accept="application/json"
+                  class="hidden"
+                />
+                <button class="btn btn-danger" id="resetDataBtn">
+                  🗑 حذف کامل داده‌ها
+                </button>
+              </div>
+            </div>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <!-- ============ CUSTOMER MODAL ============ -->
+    <div id="customerModalOverlay" class="modal-overlay hidden">
+      <div class="modal">
+        <div class="modal-head">
+          <h3 id="customerModalTitle">افزودن مشتری جدید</h3>
+          <button class="modal-close" id="customerModalClose">&times;</button>
+        </div>
+        <form id="customerForm">
+          <input type="hidden" id="customerIdInput" />
+          <div class="form-group">
+            <label>نام و نام خانوادگی *</label>
+            <input
+              type="text"
+              id="customerFullNameInput"
+              class="input"
+              placeholder="مثال: علی رضایی"
+            />
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>شماره موبایل *</label>
+              <input
+                type="text"
+                id="customerMobileInput"
+                class="input"
+                placeholder="09xxxxxxxxx"
+              />
+            </div>
+            <div class="form-group">
+              <label>کد ملی *</label>
+              <input
+                type="text"
+                id="customerNationalCodeInput"
+                class="input"
+                placeholder="کد ملی ۱۰ رقمی"
+              />
+            </div>
+          </div>
+          <div class="form-group">
+            <label>آدرس</label>
+            <input
+              type="text"
+              id="customerAddressInput"
+              class="input"
+              placeholder="آدرس مشتری"
+            />
+          </div>
+          <div class="form-group">
+            <label>توضیحات</label>
+            <textarea
+              id="customerDescInput"
+              class="input"
+              rows="2"
+              placeholder="توضیحات..."
+            ></textarea>
+          </div>
+          <div class="form-error" id="customerFormError"></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-ghost" id="customerCancelBtn">
+              انصراف
+            </button>
+            <button type="submit" class="btn btn-gold" id="customerSaveBtn">
+              ذخیره مشتری
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- ============ SMS PREVIEW MODAL ============ -->
+    <div id="smsModalOverlay" class="modal-overlay hidden">
+      <div class="modal sms-modal">
+        <div class="modal-head">
+          <h3>پیش‌نمایش پیامک</h3>
+          <button class="modal-close" id="smsModalClose">&times;</button>
+        </div>
+        <div class="phone-mock">
+          <div class="phone-mock-header">پیامک ارسالی به مشتری</div>
+          <div class="phone-mock-bubble" id="smsPreviewText"></div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-gold btn-block" id="smsModalOkBtn">
+            تایید و بستن
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
