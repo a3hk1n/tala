@@ -900,17 +900,23 @@ const UIRenderer = (() => {
            <td>${c.joinDate}</td>
            <td>${Utils.formatGram(CustomerService.getBalance(c.id))}</td>
            <td>
-             <div class="row-actions">
-               <button class="icon-btn" title="دفتر حساب" data-action="ledger" data-id="${
-                 c.id
-               }">📒</button>
-               <button class="icon-btn" title="ویرایش" data-action="edit" data-id="${
-                 c.id
-               }">✏️</button>
-               <button class="icon-btn danger" title="حذف" data-action="delete" data-id="${
-                 c.id
-               }">🗑️</button>
-             </div>
+            <div class="row-actions">
+            <button class="icon-btn" title="دفتر حساب" data-action="ledger" data-id="${
+              c.id
+            }">
+              <i class="fas fa-book"></i>
+            </button>
+            <button class="icon-btn" title="ویرایش" data-action="edit" data-id="${
+              c.id
+            }">
+              <i class="fas fa-pen"></i>
+            </button>
+            <button class="icon-btn danger" title="حذف" data-action="delete" data-id="${
+              c.id
+            }">
+              <i class="fas fa-trash"></i>
+            </button>
+            </div>
            </td>
          </tr>
        `
