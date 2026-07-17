@@ -205,7 +205,7 @@ const StorageService = (() => {
       ============================================================ */
 const AuthenticationService = (() => {
   const OPERATORS = [
-    { username: "admin1", password: "123456", fullName: "اپراتور یک (admin1)" },
+    { username: "javedan", password: "123456", fullName: "اپراتور یک (javedan)" },
     { username: "admin2", password: "123456", fullName: "اپراتور دو (admin2)" },
     {
       username: "manager",
