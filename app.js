@@ -5,8 +5,8 @@
 "use strict";
 
 /* ============================================================
-      0. UTILITIES — Persian digits / Jalali dates / number format
-      ============================================================ */
+         0. UTILITIES — Persian digits / Jalali dates / number format
+         ============================================================ */
 const Utils = (() => {
   const faDigits = ["۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹"];
 
@@ -140,34 +140,45 @@ const Utils = (() => {
 })();
 
 /* ============================================================
-      1. STORAGE SERVICE — thin wrapper around localStorage (JSON)
-      ============================================================ */
+         0.5 SUPABASE CONFIG — paste your project URL + anon key here
+         ============================================================ */
+const SupabaseConfig = {
+  URL: "https://lawwcoeiwpsakxwfhipv.supabase.co",
+  ANON_KEY: "sb_publishable_wej8saTKU5zwUd4fljHiXg_K810yVtR",
+};
+
+/* ============================================================
+         1. STORAGE SERVICE — in-memory cache (mirrors the DB)
+         All reads in the rest of the app stay synchronous by reading
+         from this cache. The cache is populated from Supabase on
+         startup and kept in sync by DataService after every write.
+         ============================================================ */
 const StorageService = (() => {
-  const NS = "gw_";
+  let cache = {
+    customers: [],
+    ledger: [],
+    goldPrice: 0,
+    goldPriceUpdatedAt: 0,
+    settings: { businessName: "قلک طلایی", smsEnabled: true },
+    sms: [],
+  };
 
   function get(key, fallback) {
-    try {
-      const raw = localStorage.getItem(NS + key);
-      if (raw === null) return fallback;
-      return JSON.parse(raw);
-    } catch (e) {
-      console.error("StorageService.get error", key, e);
-      return fallback;
-    }
+    const val = cache[key];
+    return val === undefined || val === null ? fallback : val;
   }
 
   function set(key, value) {
-    try {
-      localStorage.setItem(NS + key, JSON.stringify(value));
-      return true;
-    } catch (e) {
-      console.error("StorageService.set error", key, e);
-      return false;
-    }
+    cache[key] = value;
+    return true;
   }
 
   function remove(key) {
-    localStorage.removeItem(NS + key);
+    delete cache[key];
+  }
+
+  function replaceAll(data) {
+    cache = { ...cache, ...data };
   }
 
   function exportAll() {
@@ -181,72 +192,380 @@ const StorageService = (() => {
     };
   }
 
-  function importAll(data) {
-    if (!data || typeof data !== "object") throw new Error("فایل نامعتبر است");
-    if (Array.isArray(data.customers)) set("customers", data.customers);
-    if (Array.isArray(data.ledger)) set("ledger", data.ledger);
-    if (typeof data.goldPrice === "number") set("goldPrice", data.goldPrice);
-    if (data.settings) set("settings", data.settings);
-    if (Array.isArray(data.sms)) set("sms", data.sms);
-    return true;
+  function clearCache() {
+    cache = {
+      customers: [],
+      ledger: [],
+      goldPrice: 0,
+      goldPriceUpdatedAt: 0,
+      settings: { businessName: "قلک طلایی", smsEnabled: true },
+      sms: [],
+    };
   }
 
-  function clearAll() {
-    ["customers", "ledger", "goldPrice", "settings", "sms"].forEach((k) =>
-      remove(k)
-    );
-  }
-
-  return { get, set, remove, exportAll, importAll, clearAll };
+  return { get, set, remove, replaceAll, exportAll, clearCache };
 })();
 
 /* ============================================================
-      2. AUTHENTICATION SERVICE
-      ============================================================ */
-const AuthenticationService = (() => {
-  const OPERATORS = [
-    {
-      username: "javedan",
-      password: "123456",
-      fullName: "اپراتور یک (javedan)",
-    },
-    { username: "admin2", password: "123456", fullName: "اپراتور دو (admin2)" },
-    {
-      username: "manager",
-      password: "123456",
-      fullName: "مدیر سیستم (manager)",
-    },
-  ];
+         1.5 DATA SERVICE — all Supabase (Postgres) I/O lives here.
+         Field names are converted between the app's camelCase shape
+         and the DB's snake_case columns so the rest of the app never
+         has to know the difference.
+         ============================================================ */
+const DataService = (() => {
+  let client = null;
 
-  function login(username, password) {
-    const uname = (username || "").trim();
-    const found = OPERATORS.find(
-      (o) => o.username === uname && o.password === password
+  function init() {
+    if (typeof window.supabase === "undefined") {
+      console.error(
+        "Supabase SDK not found — make sure the supabase-js <script> tag is included in index.html before app.js."
+      );
+      return false;
+    }
+    if (
+      !SupabaseConfig.URL ||
+      SupabaseConfig.URL.startsWith("YOUR_") ||
+      !SupabaseConfig.ANON_KEY ||
+      SupabaseConfig.ANON_KEY.startsWith("YOUR_")
+    ) {
+      console.error(
+        "Supabase not configured — fill in SupabaseConfig.URL and SupabaseConfig.ANON_KEY in app.js."
+      );
+      return false;
+    }
+    client = window.supabase.createClient(
+      SupabaseConfig.URL,
+      SupabaseConfig.ANON_KEY
     );
-    if (!found)
-      return { success: false, message: "نام کاربری یا رمز عبور اشتباه است." };
-    const session = {
-      username: found.username,
-      fullName: found.fullName,
-      loginAt: new Date().toISOString(),
-    };
-    StorageService.set("session", session);
-    return { success: true, session };
+    return true;
   }
 
-  function logout() {
-    StorageService.remove("session");
+  function isReady() {
+    return !!client;
+  }
+
+  /* ---------- AUTH ---------- */
+  async function signIn(username, password) {
+    const email = `${username}@goldenwallet.local`;
+    const { data, error } = await client.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (error) throw error;
+    return data;
+  }
+
+  async function signOut() {
+    await client.auth.signOut();
+  }
+
+  async function getSession() {
+    const { data } = await client.auth.getSession();
+    return data.session;
+  }
+
+  /* ---------- MAPPERS (db snake_case -> app camelCase) ---------- */
+  function mapCustomer(row) {
+    return {
+      id: row.id,
+      fullName: row.full_name,
+      mobile: row.mobile,
+      nationalCode: row.national_code,
+      address: row.address || "",
+      description: row.description || "",
+      joinDate: row.join_date,
+      createdAt: row.created_at,
+    };
+  }
+
+  function mapTx(row) {
+    return {
+      id: row.id,
+      customerId: row.customer_id,
+      type: row.type,
+      amount: Number(row.amount),
+      goldPrice: Number(row.gold_price),
+      goldAmount: Number(row.gold_amount),
+      balanceAfter: Number(row.balance_after),
+      operator: row.operator,
+      description: row.description,
+      date: row.date,
+      timestamp: row.timestamp,
+    };
+  }
+
+  function mapSms(row) {
+    return {
+      id: row.id,
+      customerId: row.customer_id,
+      customerName: row.customer_name,
+      mobile: row.mobile,
+      text: row.text,
+      status: row.status,
+      date: row.date,
+      timestamp: row.timestamp,
+    };
+  }
+
+  /* ---------- FETCH ALL (called once at startup / refresh) ---------- */
+  async function fetchAll() {
+    const [customersRes, ledgerRes, settingsRes, smsRes] = await Promise.all([
+      client
+        .from("customers")
+        .select("*")
+        .order("created_at", { ascending: true }),
+      client.from("ledger").select("*").order("timestamp", { ascending: true }),
+      client.from("settings").select("*").eq("id", 1).single(),
+      client
+        .from("sms_logs")
+        .select("*")
+        .order("timestamp", { ascending: false }),
+    ]);
+    if (customersRes.error) throw customersRes.error;
+    if (ledgerRes.error) throw ledgerRes.error;
+    if (settingsRes.error) throw settingsRes.error;
+    if (smsRes.error) throw smsRes.error;
+
+    return {
+      customers: (customersRes.data || []).map(mapCustomer),
+      ledger: (ledgerRes.data || []).map(mapTx),
+      settings: {
+        businessName: settingsRes.data.business_name || "قلک طلایی",
+        smsEnabled: !!settingsRes.data.sms_enabled,
+      },
+      goldPrice: Number(settingsRes.data.gold_price || 0),
+      goldPriceUpdatedAt: settingsRes.data.gold_price_updated_at
+        ? new Date(settingsRes.data.gold_price_updated_at).getTime()
+        : 0,
+      sms: (smsRes.data || []).map(mapSms),
+    };
+  }
+
+  /* ---------- CUSTOMERS ---------- */
+  async function insertCustomer(customer) {
+    const { error } = await client.from("customers").insert({
+      id: customer.id,
+      full_name: customer.fullName,
+      mobile: customer.mobile,
+      national_code: customer.nationalCode,
+      address: customer.address,
+      description: customer.description,
+      join_date: customer.joinDate,
+      created_at: customer.createdAt,
+    });
+    if (error) throw error;
+  }
+
+  async function updateCustomer(id, data) {
+    const { error } = await client
+      .from("customers")
+      .update({
+        full_name: data.fullName,
+        mobile: data.mobile,
+        national_code: data.nationalCode,
+        address: data.address,
+        description: data.description,
+      })
+      .eq("id", id);
+    if (error) throw error;
+  }
+
+  async function deleteCustomer(id) {
+    // ledger + sms rows cascade/null automatically via FK constraints
+    const { error } = await client.from("customers").delete().eq("id", id);
+    if (error) throw error;
+  }
+
+  /* ---------- LEDGER ---------- */
+  async function insertLedgerTx(tx) {
+    const { error } = await client.from("ledger").insert({
+      id: tx.id,
+      customer_id: tx.customerId,
+      type: tx.type,
+      amount: tx.amount,
+      gold_price: tx.goldPrice,
+      gold_amount: tx.goldAmount,
+      balance_after: tx.balanceAfter,
+      operator: tx.operator,
+      description: tx.description,
+      date: tx.date,
+      timestamp: tx.timestamp,
+    });
+    if (error) throw error;
+  }
+
+  /* ---------- SETTINGS / GOLD PRICE (single row, id = 1) ---------- */
+  async function upsertSettings(partial) {
+    const payload = { id: 1 };
+    if (partial.businessName !== undefined)
+      payload.business_name = partial.businessName;
+    if (partial.smsEnabled !== undefined)
+      payload.sms_enabled = partial.smsEnabled;
+    if (partial.goldPrice !== undefined) payload.gold_price = partial.goldPrice;
+    if (partial.goldPriceUpdatedAt !== undefined)
+      payload.gold_price_updated_at = new Date(
+        partial.goldPriceUpdatedAt
+      ).toISOString();
+    const { error } = await client.from("settings").upsert(payload);
+    if (error) throw error;
+  }
+
+  /* ---------- SMS ---------- */
+  async function insertSms(record) {
+    const { error } = await client.from("sms_logs").insert({
+      id: record.id,
+      customer_id: record.customerId,
+      customer_name: record.customerName,
+      mobile: record.mobile,
+      text: record.text,
+      status: record.status,
+      date: record.date,
+      timestamp: record.timestamp,
+    });
+    if (error) throw error;
+  }
+
+  /* ---------- BACKUP / RESTORE ---------- */
+  async function bulkImport(data) {
+    if (Array.isArray(data.customers) && data.customers.length) {
+      const rows = data.customers.map((c) => ({
+        id: c.id,
+        full_name: c.fullName,
+        mobile: c.mobile,
+        national_code: c.nationalCode,
+        address: c.address,
+        description: c.description,
+        join_date: c.joinDate,
+        created_at: c.createdAt,
+      }));
+      const { error } = await client.from("customers").upsert(rows);
+      if (error) throw error;
+    }
+    if (Array.isArray(data.ledger) && data.ledger.length) {
+      const rows = data.ledger.map((t) => ({
+        id: t.id,
+        customer_id: t.customerId,
+        type: t.type,
+        amount: t.amount,
+        gold_price: t.goldPrice,
+        gold_amount: t.goldAmount,
+        balance_after: t.balanceAfter,
+        operator: t.operator,
+        description: t.description,
+        date: t.date,
+        timestamp: t.timestamp,
+      }));
+      const { error } = await client.from("ledger").upsert(rows);
+      if (error) throw error;
+    }
+    if (data.settings || typeof data.goldPrice === "number") {
+      await upsertSettings({
+        businessName: data.settings && data.settings.businessName,
+        smsEnabled: data.settings && data.settings.smsEnabled,
+        goldPrice: data.goldPrice,
+      });
+    }
+    if (Array.isArray(data.sms) && data.sms.length) {
+      const rows = data.sms.map((s) => ({
+        id: s.id,
+        customer_id: s.customerId,
+        customer_name: s.customerName,
+        mobile: s.mobile,
+        text: s.text,
+        status: s.status,
+        date: s.date,
+        timestamp: s.timestamp,
+      }));
+      const { error } = await client.from("sms_logs").upsert(rows);
+      if (error) throw error;
+    }
+  }
+
+  async function clearAllData() {
+    const nothingId = "__none__";
+    await client.from("ledger").delete().neq("id", nothingId);
+    await client.from("sms_logs").delete().neq("id", nothingId);
+    await client.from("customers").delete().neq("id", nothingId);
+    await client
+      .from("settings")
+      .update({
+        business_name: "قلک طلایی",
+        sms_enabled: true,
+        gold_price: 0,
+        gold_price_updated_at: null,
+      })
+      .eq("id", 1);
+  }
+
+  return {
+    init,
+    isReady,
+    signIn,
+    signOut,
+    getSession,
+    fetchAll,
+    insertCustomer,
+    updateCustomer,
+    deleteCustomer,
+    insertLedgerTx,
+    upsertSettings,
+    insertSms,
+    bulkImport,
+    clearAllData,
+  };
+})();
+
+/* ============================================================
+         2. AUTHENTICATION SERVICE
+         ============================================================ */
+const AuthenticationService = (() => {
+  // Operators are now real Supabase Auth users (create them in the
+  // Supabase Dashboard → Authentication → Users). Use an email shaped
+  // like "<username>@goldenwallet.local" and set the operator's display
+  // name in "User Metadata" as: { "full_name": "اپراتور یک" }
+  let currentSession = null;
+
+  function sessionFromSupabaseUser(user) {
+    const uname = user.email ? user.email.split("@")[0] : "operator";
+    const fullName =
+      (user.user_metadata && user.user_metadata.full_name) || uname;
+    return { username: uname, fullName, loginAt: new Date().toISOString() };
+  }
+
+  async function login(username, password) {
+    const uname = (username || "").trim();
+    try {
+      const data = await DataService.signIn(uname, password);
+      currentSession = sessionFromSupabaseUser(data.user);
+      return { success: true, session: currentSession };
+    } catch (e) {
+      return { success: false, message: "نام کاربری یا رمز عبور اشتباه است." };
+    }
+  }
+
+  async function logout() {
+    await DataService.signOut();
+    currentSession = null;
   }
 
   function currentUser() {
-    return StorageService.get("session", null);
+    return currentSession;
   }
 
   function isAuthenticated() {
-    return !!currentUser();
+    return !!currentSession;
   }
 
-  return { login, logout, currentUser, isAuthenticated };
+  // Called once at page load to see if Supabase already has a valid
+  // session (kept alive by the Supabase SDK itself between reloads).
+  async function restoreSession() {
+    const session = await DataService.getSession();
+    if (!session) return false;
+    currentSession = sessionFromSupabaseUser(session.user);
+    return true;
+  }
+
+  return { login, logout, currentUser, isAuthenticated, restoreSession };
 })();
 
 // /* ============================================================
@@ -271,8 +590,8 @@ const AuthenticationService = (() => {
 // })();
 
 /* ============================================================
-   3. GOLD PRICE SERVICE
-============================================================ */
+      3. GOLD PRICE SERVICE
+   ============================================================ */
 
 const GoldPriceService = (() => {
   const API_URL = "https://www.goldapi.io/api/XAU/USD";
@@ -288,15 +607,20 @@ const GoldPriceService = (() => {
     return StorageService.get("goldPrice", 0);
   }
 
-  function setCurrentPrice(price) {
+  async function setCurrentPrice(price) {
     const p = Math.round(Number(price));
 
     if (p <= 0) {
       throw new Error("قیمت معتبر نیست.");
     }
 
+    const updatedAt = Date.now();
+    await DataService.upsertSettings({
+      goldPrice: p,
+      goldPriceUpdatedAt: updatedAt,
+    });
     StorageService.set("goldPrice", p);
-    StorageService.set("goldPriceUpdatedAt", Date.now());
+    StorageService.set("goldPriceUpdatedAt", updatedAt);
 
     return p;
   }
@@ -343,7 +667,7 @@ const GoldPriceService = (() => {
       // هر گرم طلای 18 عیار
       const gram18 = gram24 * 0.75;
 
-      setCurrentPrice(gram18);
+      await setCurrentPrice(gram18);
 
       return gram18;
     } catch (error) {
@@ -362,8 +686,8 @@ const GoldPriceService = (() => {
 })();
 
 /* ============================================================
-      4. VALIDATION SERVICE
-      ============================================================ */
+         4. VALIDATION SERVICE
+         ============================================================ */
 const ValidationService = (() => {
   function validateCustomer({ fullName, mobile, nationalCode }) {
     if (!fullName || fullName.trim().length < 3)
@@ -401,8 +725,8 @@ const ValidationService = (() => {
 })();
 
 /* ============================================================
-      5. CUSTOMER SERVICE
-      ============================================================ */
+         5. CUSTOMER SERVICE
+         ============================================================ */
 const CustomerService = (() => {
   function getAll() {
     return StorageService.get("customers", []);
@@ -416,7 +740,7 @@ const CustomerService = (() => {
     return getAll().find((c) => c.id === id) || null;
   }
 
-  function add(data) {
+  async function add(data) {
     const list = getAll();
     const customer = {
       id: Utils.uid("cust"),
@@ -428,16 +752,17 @@ const CustomerService = (() => {
       joinDate: Utils.formatJalaliDate(),
       createdAt: new Date().toISOString(),
     };
+    await DataService.insertCustomer(customer);
     list.push(customer);
     save(list);
     return customer;
   }
 
-  function update(id, data) {
+  async function update(id, data) {
     const list = getAll();
     const idx = list.findIndex((c) => c.id === id);
     if (idx === -1) throw new Error("مشتری یافت نشد.");
-    list[idx] = {
+    const updated = {
       ...list[idx],
       fullName: data.fullName.trim(),
       mobile: Utils.toEnDigits(data.mobile).trim(),
@@ -445,14 +770,17 @@ const CustomerService = (() => {
       address: (data.address || "").trim(),
       description: (data.description || "").trim(),
     };
+    await DataService.updateCustomer(id, updated);
+    list[idx] = updated;
     save(list);
     return list[idx];
   }
 
-  function remove(id) {
+  async function remove(id) {
+    await DataService.deleteCustomer(id); // DB cascades ledger/sms rows
     const list = getAll().filter((c) => c.id !== id);
     save(list);
-    // also clean up ledger entries for this customer
+    // mirror the cascade locally so the in-memory cache matches the DB
     const ledger = LedgerService.getAll().filter((t) => t.customerId !== id);
     LedgerService.saveAll(ledger);
   }
@@ -503,8 +831,8 @@ const CustomerService = (() => {
 })();
 
 /* ============================================================
-      6. LEDGER SERVICE
-      ============================================================ */
+         6. LEDGER SERVICE
+         ============================================================ */
 const LedgerService = (() => {
   function getAll() {
     return StorageService.get("ledger", []);
@@ -520,7 +848,7 @@ const LedgerService = (() => {
       .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
   }
 
-  function recordDeposit({ customerId, amount, description, operator }) {
+  async function recordDeposit({ customerId, amount, description, operator }) {
     const price = GoldPriceService.getCurrentPrice();
     const goldAmount = Number((amount / price).toFixed(4));
     const prevBalance = CustomerService.getBalance(customerId);
@@ -538,13 +866,19 @@ const LedgerService = (() => {
       date: Utils.formatJalaliDate(),
       timestamp: new Date().toISOString(),
     };
+    await DataService.insertLedgerTx(tx);
     const list = getAll();
     list.push(tx);
     saveAll(list);
     return tx;
   }
 
-  function recordWithdrawal({ customerId, amount, description, operator }) {
+  async function recordWithdrawal({
+    customerId,
+    amount,
+    description,
+    operator,
+  }) {
     const price = GoldPriceService.getCurrentPrice();
     const goldAmount = Number((amount / price).toFixed(4));
     const prevBalance = CustomerService.getBalance(customerId);
@@ -564,6 +898,7 @@ const LedgerService = (() => {
       date: Utils.formatJalaliDate(),
       timestamp: new Date().toISOString(),
     };
+    await DataService.insertLedgerTx(tx);
     const list = getAll();
     list.push(tx);
     saveAll(list);
@@ -598,8 +933,8 @@ const LedgerService = (() => {
 })();
 
 /* ============================================================
-      7. SMS SERVICE (preview only — API-ready)
-      ============================================================ */
+         7. SMS SERVICE (preview only — API-ready)
+         ============================================================ */
 const SMSService = (() => {
   function getAll() {
     return StorageService.get("sms", []);
@@ -621,10 +956,9 @@ const SMSService = (() => {
     )}`;
   }
 
-  function log(customer, tx, text) {
+  async function log(customer, tx, text) {
     const settings = StorageService.get("settings", {});
-    const list = getAll();
-    list.push({
+    const record = {
       id: Utils.uid("sms"),
       customerId: customer.id,
       customerName: customer.fullName,
@@ -633,7 +967,10 @@ const SMSService = (() => {
       status: settings.smsEnabled ? "ارسال شده (نمایشی)" : "غیرفعال",
       date: Utils.formatJalaliDate(),
       timestamp: new Date().toISOString(),
-    });
+    };
+    await DataService.insertSms(record);
+    const list = getAll();
+    list.push(record);
     StorageService.set("sms", list);
   }
 
@@ -644,8 +981,8 @@ const SMSService = (() => {
 })();
 
 /* ============================================================
-      8. REPORT SERVICE
-      ============================================================ */
+         8. REPORT SERVICE
+         ============================================================ */
 const ReportService = (() => {
   function summary() {
     const customers = CustomerService.getAll();
@@ -780,8 +1117,8 @@ const ReportService = (() => {
 })();
 
 /* ============================================================
-      9. UI HELPERS — Toasts / Confirm / Modal Manager
-      ============================================================ */
+         9. UI HELPERS — Toasts / Confirm / Modal Manager
+         ============================================================ */
 const ToastManager = (() => {
   const container = () => document.getElementById("toastContainer");
 
@@ -849,8 +1186,8 @@ const ModalManager = (() => {
 })();
 
 /* ============================================================
-      10. STATE MANAGER — app-wide state + section navigation
-      ============================================================ */
+         10. STATE MANAGER — app-wide state + section navigation
+         ============================================================ */
 const StateManager = (() => {
   let state = {
     activeSection: "dashboard",
@@ -868,8 +1205,8 @@ const StateManager = (() => {
 })();
 
 /* ============================================================
-      11. UI RENDERER — builds all dynamic DOM content
-      ============================================================ */
+         11. UI RENDERER — builds all dynamic DOM content
+         ============================================================ */
 const UIRenderer = (() => {
   function renderStatCards() {
     const s = ReportService.summary();
@@ -914,12 +1251,12 @@ const UIRenderer = (() => {
     document.getElementById("statGrid").innerHTML = cards
       .map(
         (c) => `
-         <div class="stat-card glass">
-           <div class="stat-ico">${c.ico}</div>
-           <div class="stat-label">${c.label}</div>
-           <div class="stat-value ${c.cls}">${c.value}</div>
-         </div>
-       `
+            <div class="stat-card glass">
+              <div class="stat-ico">${c.ico}</div>
+              <div class="stat-label">${c.label}</div>
+              <div class="stat-value ${c.cls}">${c.value}</div>
+            </div>
+          `
       )
       .join("");
 
@@ -944,13 +1281,13 @@ const UIRenderer = (() => {
             ? `<span class="badge badge-deposit">واریز</span>`
             : `<span class="badge badge-withdraw">برداشت</span>`;
         return `<tr>
-           <td>${t.date}</td>
-           <td>${Utils.escapeHtml(cust ? cust.fullName : "حذف شده")}</td>
-           <td>${badge}</td>
-           <td>${Utils.formatNumber(t.amount)}</td>
-           <td>${Utils.formatGram(t.goldAmount)}</td>
-           <td>${Utils.escapeHtml(t.operator)}</td>
-         </tr>`;
+              <td>${t.date}</td>
+              <td>${Utils.escapeHtml(cust ? cust.fullName : "حذف شده")}</td>
+              <td>${badge}</td>
+              <td>${Utils.formatNumber(t.amount)}</td>
+              <td>${Utils.formatGram(t.goldAmount)}</td>
+              <td>${Utils.escapeHtml(t.operator)}</td>
+            </tr>`;
       })
       .join("");
   }
@@ -988,33 +1325,33 @@ const UIRenderer = (() => {
     tbody.innerHTML = list
       .map(
         (c) => `
-         <tr>
-           <td>${Utils.escapeHtml(c.fullName)}</td>
-           <td>${Utils.toFaDigits(c.mobile)}</td>
-           <td>${Utils.toFaDigits(c.nationalCode)}</td>
-           <td>${c.joinDate}</td>
-           <td>${Utils.formatGram(CustomerService.getBalance(c.id))}</td>
-           <td>
-            <div class="row-actions">
-            <button class="icon-btn" title="دفتر حساب" data-action="ledger" data-id="${
-              c.id
-            }">
-              <i class="fas fa-book"></i>
-            </button>
-            <button class="icon-btn" title="ویرایش" data-action="edit" data-id="${
-              c.id
-            }">
-              <i class="fas fa-pen"></i>
-            </button>
-            <button class="icon-btn danger" title="حذف" data-action="delete" data-id="${
-              c.id
-            }">
-              <i class="fas fa-trash"></i>
-            </button>
-            </div>
-           </td>
-         </tr>
-       `
+            <tr>
+              <td>${Utils.escapeHtml(c.fullName)}</td>
+              <td>${Utils.toFaDigits(c.mobile)}</td>
+              <td>${Utils.toFaDigits(c.nationalCode)}</td>
+              <td>${c.joinDate}</td>
+              <td>${Utils.formatGram(CustomerService.getBalance(c.id))}</td>
+              <td>
+               <div class="row-actions">
+               <button class="icon-btn" title="دفتر حساب" data-action="ledger" data-id="${
+                 c.id
+               }">
+                 <i class="fas fa-book"></i>
+               </button>
+               <button class="icon-btn" title="ویرایش" data-action="edit" data-id="${
+                 c.id
+               }">
+                 <i class="fas fa-pen"></i>
+               </button>
+               <button class="icon-btn danger" title="حذف" data-action="delete" data-id="${
+                 c.id
+               }">
+                 <i class="fas fa-trash"></i>
+               </button>
+               </div>
+              </td>
+            </tr>
+          `
       )
       .join("");
   }
@@ -1102,15 +1439,15 @@ const UIRenderer = (() => {
             ? `<span class="badge badge-deposit">واریز</span>`
             : `<span class="badge badge-withdraw">برداشت</span>`;
         return `<tr>
-           <td>${t.date}</td>
-           <td>${badge}</td>
-           <td>${Utils.formatNumber(t.amount)}</td>
-           <td>${Utils.formatNumber(t.goldPrice)}</td>
-           <td>${Utils.formatGram(t.goldAmount)}</td>
-           <td>${Utils.formatGram(t.balanceAfter)}</td>
-           <td>${Utils.escapeHtml(t.operator)}</td>
-           <td>${Utils.escapeHtml(t.description)}</td>
-         </tr>`;
+              <td>${t.date}</td>
+              <td>${badge}</td>
+              <td>${Utils.formatNumber(t.amount)}</td>
+              <td>${Utils.formatNumber(t.goldPrice)}</td>
+              <td>${Utils.formatGram(t.goldAmount)}</td>
+              <td>${Utils.formatGram(t.balanceAfter)}</td>
+              <td>${Utils.escapeHtml(t.operator)}</td>
+              <td>${Utils.escapeHtml(t.description)}</td>
+            </tr>`;
       })
       .join("");
   }
@@ -1125,15 +1462,15 @@ const UIRenderer = (() => {
       tbody.innerHTML = groups
         .map(
           (g) => `
-           <tr>
-             <td>${Utils.toFaDigits(g.key)}</td>
-             <td>${Utils.formatNumber(g.depositCount)}</td>
-             <td>${Utils.formatToman(g.depositSum)}</td>
-             <td>${Utils.formatNumber(g.withdrawCount)}</td>
-             <td>${Utils.formatToman(g.withdrawSum)}</td>
-             <td>${Utils.formatGram(g.netGold)}</td>
-           </tr>
-         `
+              <tr>
+                <td>${Utils.toFaDigits(g.key)}</td>
+                <td>${Utils.formatNumber(g.depositCount)}</td>
+                <td>${Utils.formatToman(g.depositSum)}</td>
+                <td>${Utils.formatNumber(g.withdrawCount)}</td>
+                <td>${Utils.formatToman(g.withdrawSum)}</td>
+                <td>${Utils.formatGram(g.netGold)}</td>
+              </tr>
+            `
         )
         .join("");
     }
@@ -1146,13 +1483,13 @@ const UIRenderer = (() => {
       topBody.innerHTML = top
         .map(
           (t, i) => `
-           <tr>
-             <td>${Utils.toFaDigits(i + 1)}</td>
-             <td>${Utils.escapeHtml(t.customer.fullName)}</td>
-             <td>${Utils.formatNumber(t.txCount)}</td>
-             <td>${Utils.formatGram(t.balance)}</td>
-           </tr>
-         `
+              <tr>
+                <td>${Utils.toFaDigits(i + 1)}</td>
+                <td>${Utils.escapeHtml(t.customer.fullName)}</td>
+                <td>${Utils.formatNumber(t.txCount)}</td>
+                <td>${Utils.formatGram(t.balance)}</td>
+              </tr>
+            `
         )
         .join("");
     }
@@ -1174,16 +1511,16 @@ const UIRenderer = (() => {
     tbody.innerHTML = list
       .map(
         (s) => `
-         <tr>
-           <td>${s.date}</td>
-           <td>${Utils.escapeHtml(s.customerName)}</td>
-           <td>${Utils.toFaDigits(s.mobile)}</td>
-           <td style="white-space:normal;max-width:320px;">${Utils.escapeHtml(
-             s.text
-           ).replace(/\n/g, "<br>")}</td>
-           <td>${Utils.escapeHtml(s.status)}</td>
-         </tr>
-       `
+            <tr>
+              <td>${s.date}</td>
+              <td>${Utils.escapeHtml(s.customerName)}</td>
+              <td>${Utils.toFaDigits(s.mobile)}</td>
+              <td style="white-space:normal;max-width:320px;">${Utils.escapeHtml(
+                s.text
+              ).replace(/\n/g, "<br>")}</td>
+              <td>${Utils.escapeHtml(s.status)}</td>
+            </tr>
+          `
       )
       .join("");
   }
@@ -1251,8 +1588,8 @@ const UIRenderer = (() => {
 })();
 
 /* ============================================================
-      12. CHART RENDERER — pure Canvas 2D, no libraries
-      ============================================================ */
+         12. CHART RENDERER — pure Canvas 2D, no libraries
+         ============================================================ */
 const ChartRenderer = (() => {
   function setupCanvas(canvas) {
     const ctx = canvas.getContext("2d");
@@ -1500,8 +1837,8 @@ const ChartRenderer = (() => {
 })();
 
 /* ============================================================
-      13. NUMBER INPUT MASKING (live comma formatting)
-      ============================================================ */
+         13. NUMBER INPUT MASKING (live comma formatting)
+         ============================================================ */
 function attachNumberMask(input) {
   input.addEventListener("input", () => {
     const raw = Utils.parseNumber(input.value);
@@ -1517,8 +1854,8 @@ function attachNumberMask(input) {
 }
 
 /* ============================================================
-      14. EVENT MANAGER — wires up all DOM interactions
-      ============================================================ */
+         14. EVENT MANAGER — wires up all DOM interactions
+         ============================================================ */
 const EventManager = (() => {
   function switchSection(section) {
     StateManager.set("activeSection", section);
@@ -1557,23 +1894,38 @@ const EventManager = (() => {
   }
 
   function initLogin() {
-    document.getElementById("loginForm").addEventListener("submit", (e) => {
-      e.preventDefault();
-      const username = document.getElementById("loginUsername").value.trim();
-      const password = document.getElementById("loginPassword").value;
-      const result = AuthenticationService.login(username, password);
-      const errorEl = document.getElementById("loginError");
-      if (!result.success) {
-        errorEl.textContent = result.message;
-        return;
-      }
-      errorEl.textContent = "";
-      document.getElementById("loginForm").reset();
-      startApp();
-    });
+    document
+      .getElementById("loginForm")
+      .addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const submitBtn = document.querySelector(
+          "#loginForm button[type='submit']"
+        );
+        const username = document.getElementById("loginUsername").value.trim();
+        const password = document.getElementById("loginPassword").value;
+        const errorEl = document.getElementById("loginError");
+        errorEl.textContent = "";
+        submitBtn.disabled = true;
+        try {
+          const result = await AuthenticationService.login(username, password);
+          if (!result.success) {
+            errorEl.textContent = result.message;
+            return;
+          }
+          document.getElementById("loginForm").reset();
+          await startApp();
+        } catch (ex) {
+          errorEl.textContent =
+            "خطا در اتصال به سرور. اتصال اینترنت را بررسی کنید.";
+          console.error(ex);
+        } finally {
+          submitBtn.disabled = false;
+        }
+      });
 
-    document.getElementById("logoutBtn").addEventListener("click", () => {
-      AuthenticationService.logout();
+    document.getElementById("logoutBtn").addEventListener("click", async () => {
+      await AuthenticationService.logout();
+      StorageService.clearCache();
       document.getElementById("appShell").classList.add("hidden");
       document.getElementById("loginScreen").classList.remove("hidden");
     });
@@ -1611,17 +1963,17 @@ const EventManager = (() => {
         box.innerHTML = results
           .map(
             (c) => `
-             <div class="search-result-item" data-id="${c.id}">
-               <div><strong>${Utils.escapeHtml(
-                 c.fullName
-               )}</strong><span>${Utils.toFaDigits(
+                <div class="search-result-item" data-id="${c.id}">
+                  <div><strong>${Utils.escapeHtml(
+                    c.fullName
+                  )}</strong><span>${Utils.toFaDigits(
               c.mobile
             )} — کد ملی ${Utils.toFaDigits(c.nationalCode)}</span></div>
-               <span>${Utils.formatGram(
-                 CustomerService.getBalance(c.id)
-               )}</span>
-             </div>
-           `
+                  <span>${Utils.formatGram(
+                    CustomerService.getBalance(c.id)
+                  )}</span>
+                </div>
+              `
           )
           .join("");
       }
@@ -1683,41 +2035,47 @@ const EventManager = (() => {
         ModalManager.close("customerModalOverlay")
       );
 
-    document.getElementById("customerForm").addEventListener("submit", (e) => {
-      e.preventDefault();
-      const id = document.getElementById("customerIdInput").value;
-      const data = {
-        fullName: document.getElementById("customerFullNameInput").value,
-        mobile: document.getElementById("customerMobileInput").value,
-        nationalCode: document.getElementById("customerNationalCodeInput")
-          .value,
-        address: document.getElementById("customerAddressInput").value,
-        description: document.getElementById("customerDescInput").value,
-      };
-      const err = ValidationService.validateCustomer(data);
-      const errorEl = document.getElementById("customerFormError");
-      if (err) {
-        errorEl.textContent = err;
-        return;
-      }
-      errorEl.textContent = "";
-
-      try {
-        if (id) {
-          CustomerService.update(id, data);
-          ToastManager.show("اطلاعات مشتری با موفقیت ویرایش شد.", "success");
-        } else {
-          CustomerService.add(data);
-          ToastManager.show("مشتری جدید با موفقیت افزوده شد.", "success");
+    document
+      .getElementById("customerForm")
+      .addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const id = document.getElementById("customerIdInput").value;
+        const data = {
+          fullName: document.getElementById("customerFullNameInput").value,
+          mobile: document.getElementById("customerMobileInput").value,
+          nationalCode: document.getElementById("customerNationalCodeInput")
+            .value,
+          address: document.getElementById("customerAddressInput").value,
+          description: document.getElementById("customerDescInput").value,
+        };
+        const err = ValidationService.validateCustomer(data);
+        const errorEl = document.getElementById("customerFormError");
+        if (err) {
+          errorEl.textContent = err;
+          return;
         }
-        ModalManager.close("customerModalOverlay");
-        UIRenderer.renderCustomersTable();
-        UIRenderer.renderDepositWithdrawSelects();
-        UIRenderer.renderStatCards();
-      } catch (ex) {
-        errorEl.textContent = ex.message;
-      }
-    });
+        errorEl.textContent = "";
+        const saveBtn = document.getElementById("customerSaveBtn");
+        saveBtn.disabled = true;
+
+        try {
+          if (id) {
+            await CustomerService.update(id, data);
+            ToastManager.show("اطلاعات مشتری با موفقیت ویرایش شد.", "success");
+          } else {
+            await CustomerService.add(data);
+            ToastManager.show("مشتری جدید با موفقیت افزوده شد.", "success");
+          }
+          ModalManager.close("customerModalOverlay");
+          UIRenderer.renderCustomersTable();
+          UIRenderer.renderDepositWithdrawSelects();
+          UIRenderer.renderStatCards();
+        } catch (ex) {
+          errorEl.textContent = ex.message || "خطا در ارتباط با سرور.";
+        } finally {
+          saveBtn.disabled = false;
+        }
+      });
 
     document
       .getElementById("customersTable")
@@ -1735,11 +2093,15 @@ const EventManager = (() => {
             { title: "حذف مشتری", okText: "حذف کن" }
           );
           if (ok) {
-            CustomerService.remove(id);
-            UIRenderer.renderCustomersTable();
-            UIRenderer.renderDepositWithdrawSelects();
-            UIRenderer.renderStatCards();
-            ToastManager.show("مشتری حذف شد.", "success");
+            try {
+              await CustomerService.remove(id);
+              UIRenderer.renderCustomersTable();
+              UIRenderer.renderDepositWithdrawSelects();
+              UIRenderer.renderStatCards();
+              ToastManager.show("مشتری حذف شد.", "success");
+            } catch (ex) {
+              ToastManager.show(ex.message || "خطا در حذف مشتری.", "error");
+            }
           }
         }
       });
@@ -1797,31 +2159,32 @@ const EventManager = (() => {
       .getElementById("depositCustomerSelect")
       .addEventListener("change", updateDepositPreview);
 
-    document
-      .getElementById("submitDepositBtn")
-      .addEventListener("click", () => {
-        const errorEl = document.getElementById("depositError");
-        const custId = document.getElementById("depositCustomerSelect").value;
-        const amount = Utils.parseNumber(amountInput.value);
-        const desc = document.getElementById("depositDescInput").value;
+    const submitBtn = document.getElementById("submitDepositBtn");
+    submitBtn.addEventListener("click", async () => {
+      const errorEl = document.getElementById("depositError");
+      const custId = document.getElementById("depositCustomerSelect").value;
+      const amount = Utils.parseNumber(amountInput.value);
+      const desc = document.getElementById("depositDescInput").value;
 
-        if (!custId) {
-          errorEl.textContent = "لطفا یک مشتری انتخاب کنید.";
-          return;
-        }
-        const amtErr = ValidationService.validateAmount(amount);
-        if (amtErr) {
-          errorEl.textContent = amtErr;
-          return;
-        }
-        if (GoldPriceService.getCurrentPrice() <= 0) {
-          errorEl.textContent = "ابتدا قیمت طلا را از بخش تنظیمات ثبت کنید.";
-          return;
-        }
-        errorEl.textContent = "";
+      if (!custId) {
+        errorEl.textContent = "لطفا یک مشتری انتخاب کنید.";
+        return;
+      }
+      const amtErr = ValidationService.validateAmount(amount);
+      if (amtErr) {
+        errorEl.textContent = amtErr;
+        return;
+      }
+      if (GoldPriceService.getCurrentPrice() <= 0) {
+        errorEl.textContent = "ابتدا قیمت طلا را از بخش تنظیمات ثبت کنید.";
+        return;
+      }
+      errorEl.textContent = "";
+      submitBtn.disabled = true;
 
+      try {
         const operator = AuthenticationService.currentUser().username;
-        const tx = LedgerService.recordDeposit({
+        const tx = await LedgerService.recordDeposit({
           customerId: custId,
           amount,
           description: desc,
@@ -1829,7 +2192,7 @@ const EventManager = (() => {
         });
         const cust = CustomerService.getById(custId);
         const smsText = SMSService.buildDepositMessage(cust.fullName, tx);
-        SMSService.log(cust, tx, smsText);
+        await SMSService.log(cust, tx, smsText);
 
         amountInput.value = "";
         document.getElementById("depositDescInput").value = "";
@@ -1838,7 +2201,12 @@ const EventManager = (() => {
         UIRenderer.renderDepositWithdrawSelects();
         showSmsPreview(smsText);
         ToastManager.show("واریز با موفقیت ثبت شد.", "success");
-      });
+      } catch (ex) {
+        errorEl.textContent = ex.message || "خطا در ثبت واریز.";
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
   }
 
   /* ---------- Withdraw ---------- */
@@ -1916,14 +2284,14 @@ const EventManager = (() => {
 
         const operator = AuthenticationService.currentUser().username;
         try {
-          const tx = LedgerService.recordWithdrawal({
+          const tx = await LedgerService.recordWithdrawal({
             customerId: custId,
             amount,
             description: desc,
             operator,
           });
           const smsText = SMSService.buildWithdrawMessage(cust.fullName, tx);
-          SMSService.log(cust, tx, smsText);
+          await SMSService.log(cust, tx, smsText);
 
           amountInput.value = "";
           document.getElementById("withdrawDescInput").value = "";
@@ -1967,26 +2335,41 @@ const EventManager = (() => {
 
     document
       .getElementById("saveGoldPriceBtn")
-      .addEventListener("click", () => {
+      .addEventListener("click", async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true;
         try {
-          GoldPriceService.setCurrentPrice(Utils.parseNumber(priceInput.value));
+          await GoldPriceService.setCurrentPrice(
+            Utils.parseNumber(priceInput.value)
+          );
           UIRenderer.renderSidebarGoldPrice();
           ToastManager.show("قیمت طلا با موفقیت ذخیره شد.", "success");
         } catch (ex) {
-          ToastManager.show(ex.message, "error");
+          ToastManager.show(ex.message || "خطا در ذخیره قیمت طلا.", "error");
+        } finally {
+          btn.disabled = false;
         }
       });
 
     document
       .getElementById("saveBusinessInfoBtn")
-      .addEventListener("click", () => {
+      .addEventListener("click", async (e) => {
+        const btn = e.currentTarget;
         const businessName =
           document.getElementById("settingsBusinessNameInput").value.trim() ||
           "قلک طلایی";
         const smsEnabled = document.getElementById("settingsSmsToggle").checked;
-        StorageService.set("settings", { businessName, smsEnabled });
-        UIRenderer.renderBusinessName();
-        ToastManager.show("تنظیمات ذخیره شد.", "success");
+        btn.disabled = true;
+        try {
+          await DataService.upsertSettings({ businessName, smsEnabled });
+          StorageService.set("settings", { businessName, smsEnabled });
+          UIRenderer.renderBusinessName();
+          ToastManager.show("تنظیمات ذخیره شد.", "success");
+        } catch (ex) {
+          ToastManager.show(ex.message || "خطا در ذخیره تنظیمات.", "error");
+        } finally {
+          btn.disabled = false;
+        }
       });
 
     document.getElementById("exportJsonBtn").addEventListener("click", () => {
@@ -2015,15 +2398,20 @@ const EventManager = (() => {
           try {
             const data = JSON.parse(reader.result);
             const ok = await ModalManager.confirm(
-              "اطلاعات فعلی با محتوای فایل جایگزین خواهد شد.",
+              "اطلاعات فعلی با محتوای فایل جایگزین/تکمیل خواهد شد (بر اساس شناسه).",
               { title: "بازیابی داده‌ها", okText: "بازیابی کن" }
             );
             if (!ok) return;
-            StorageService.importAll(data);
+            await DataService.bulkImport(data);
+            const fresh = await DataService.fetchAll();
+            StorageService.replaceAll(fresh);
             UIRenderer.refreshAll();
             ToastManager.show("داده‌ها با موفقیت بازیابی شدند.", "success");
           } catch (ex) {
-            ToastManager.show("فایل انتخاب شده معتبر نیست.", "error");
+            ToastManager.show(
+              ex.message || "فایل انتخاب شده معتبر نیست.",
+              "error"
+            );
           }
         };
         reader.readAsText(file);
@@ -2038,9 +2426,14 @@ const EventManager = (() => {
           { title: "حذف کامل داده‌ها", okText: "حذف همه چیز" }
         );
         if (!ok) return;
-        StorageService.clearAll();
-        UIRenderer.refreshAll();
-        ToastManager.show("تمامی داده‌ها پاک شدند.", "success");
+        try {
+          await DataService.clearAllData();
+          StorageService.clearCache();
+          UIRenderer.refreshAll();
+          ToastManager.show("تمامی داده‌ها پاک شدند.", "success");
+        } catch (ex) {
+          ToastManager.show(ex.message || "خطا در حذف داده‌ها.", "error");
+        }
       });
   }
 
@@ -2081,46 +2474,45 @@ const EventManager = (() => {
 })();
 
 /* ============================================================
-      15. SEED DATA — first run demo content (only if store is empty)
-      ============================================================ */
-function seedIfEmpty() {
-  if (StorageService.get("goldPrice", null) === null) {
-    StorageService.set("goldPrice", 8250000);
-  }
-  if (StorageService.get("settings", null) === null) {
-    StorageService.set("settings", {
-      businessName: "قلک طلایی",
-      smsEnabled: true,
-    });
-  }
-  if (StorageService.get("customers", null) === null) {
-    StorageService.set("customers", []);
-  }
-  if (StorageService.get("ledger", null) === null) {
-    StorageService.set("ledger", []);
-  }
-  if (StorageService.get("sms", null) === null) {
-    StorageService.set("sms", []);
-  }
+         15. APP BOOTSTRAP
+         ============================================================ */
+async function loadDataFromSupabase() {
+  const data = await DataService.fetchAll();
+  StorageService.replaceAll(data);
 }
 
-/* ============================================================
-      16. APP BOOTSTRAP
-      ============================================================ */
 async function startApp() {
   document.getElementById("loginScreen").classList.add("hidden");
   document.getElementById("appShell").classList.remove("hidden");
+  try {
+    await loadDataFromSupabase();
+  } catch (ex) {
+    console.error("Failed to load data from Supabase:", ex);
+    ToastManager.show(
+      "خطا در دریافت اطلاعات از سرور. اتصال اینترنت را بررسی کنید.",
+      "error"
+    );
+  }
   UIRenderer.refreshAll();
   EventManager.switchSection("dashboard");
   await GoldPriceService.updatePrice();
+  UIRenderer.renderSidebarGoldPrice();
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  seedIfEmpty();
+document.addEventListener("DOMContentLoaded", async () => {
   EventManager.initAll();
 
-  if (AuthenticationService.isAuthenticated()) {
-    startApp();
+  const ready = DataService.init();
+  if (!ready) {
+    document.getElementById("loginScreen").classList.remove("hidden");
+    document.getElementById("loginError").textContent =
+      "سامانه به دیتابیس متصل نیست. تنظیمات Supabase در app.js را کامل کنید.";
+    return;
+  }
+
+  const restored = await AuthenticationService.restoreSession();
+  if (restored) {
+    await startApp();
   } else {
     document.getElementById("loginScreen").classList.remove("hidden");
   }
