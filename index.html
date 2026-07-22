@@ -262,11 +262,16 @@
                   class="input"
                   placeholder="جستجو بر اساس نام، موبایل یا کد ملی..."
                 />
-                <select id="customerSortSelect" class="input select-input">
-                  <option value="newest">جدیدترین</option>
-                  <option value="name">نام (الفبا)</option>
-                  <option value="balance">موجودی طلا</option>
-                </select>
+                <div style="display: flex; gap: 10px; align-items: center">
+                  <label for="customerSortSelect" style="white-space: nowrap">
+                    مرتب‌سازی بر اساس:
+                  </label>
+                  <select id="customerSortSelect" class="input select-input">
+                    <option value="newest">جدیدترین</option>
+                    <option value="name">نام (الفبا)</option>
+                    <option value="balance">موجودی طلا</option>
+                  </select>
+                </div>
               </div>
               <div class="table-wrap">
                 <table class="data-table" id="customersTable">
@@ -292,13 +297,22 @@
             <div class="page-head">
               <h2>دفتر حساب مشتری</h2>
               <p class="page-sub">
-                دفترچه حساب دیجیتال مانند دفترچه سنتی طلافروشی
+                ثبت و پیگیری تمام واریزها، برداشت‌ها و مانده حساب مشتریان
               </p>
             </div>
 
             <div class="card glass" id="ledgerNoCustomer">
               <div class="empty-state">
-                <div class="empty-illustration">📒</div>
+                <div class="empty-illustration">
+                  <i
+                    class="fas fa-book"
+                    style="
+                      font-size: 4rem;
+                      color: #c9a84c;
+                      animation: pulse 2s infinite;
+                    "
+                  ></i>
+                </div>
                 <h3>مشتری انتخاب نشده</h3>
                 <p>
                   برای مشاهده دفتر حساب، از بخش «مشتریان» یک مشتری را انتخاب
@@ -358,13 +372,14 @@
                       class="btn btn-success btn-sm"
                       id="ledgerDepositBtn"
                     >
-                      💰 واریز جدید
+                      <i class="fas fa-plus-circle"></i> واریز جدید
                     </button>
+
                     <button
                       class="btn btn-danger btn-sm"
                       id="ledgerWithdrawBtn"
                     >
-                      💸 برداشت جدید
+                      <i class="fas fa-minus-circle"></i> برداشت جدید
                     </button>
                   </div>
                 </div>

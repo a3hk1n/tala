@@ -205,7 +205,11 @@ const StorageService = (() => {
       ============================================================ */
 const AuthenticationService = (() => {
   const OPERATORS = [
-    { username: "javedan", password: "123456", fullName: "اپراتور یک (javedan)" },
+    {
+      username: "javedan",
+      password: "123456",
+      fullName: "اپراتور یک (javedan)",
+    },
     { username: "admin2", password: "123456", fullName: "اپراتور دو (admin2)" },
     {
       username: "manager",
@@ -245,25 +249,116 @@ const AuthenticationService = (() => {
   return { login, logout, currentUser, isAuthenticated };
 })();
 
+// /* ============================================================
+//       3. GOLD PRICE SERVICE (API-ready architecture)
+//       ============================================================ */
+// const GoldPriceService = (() => {
+//   function getCurrentPrice() {
+//     return StorageService.get("goldPrice", 0);
+//   }
+
+//   function setCurrentPrice(price) {
+//     const p = Number(price);
+//     if (!p || p <= 0) throw new Error("قیمت طلا باید بزرگتر از صفر باشد.");
+//     StorageService.set("goldPrice", p);
+//     return p;
+//   }
+
+//   // Placeholder for future live API integration:
+//   // async function fetchFromApi() { const res = await fetch('/api/gold-price'); ... }
+
+//   return { getCurrentPrice, setCurrentPrice };
+// })();
+
 /* ============================================================
-      3. GOLD PRICE SERVICE (API-ready architecture)
-      ============================================================ */
+   3. GOLD PRICE SERVICE
+============================================================ */
+
 const GoldPriceService = (() => {
+  const API_URL = "https://www.goldapi.io/api/XAU/USD";
+  const API_KEY = "goldapi-e4110585dbd72ade27ab9e96ff9350d7-io";
+
+  // فعلاً ثابت تا بعداً API دلار اضافه شود
+  const DOLLAR_PRICE = 180000;
+
+  // 12 ساعت
+  const UPDATE_INTERVAL = 12 * 60 * 60 * 1000;
+
   function getCurrentPrice() {
     return StorageService.get("goldPrice", 0);
   }
 
   function setCurrentPrice(price) {
-    const p = Number(price);
-    if (!p || p <= 0) throw new Error("قیمت طلا باید بزرگتر از صفر باشد.");
+    const p = Math.round(Number(price));
+
+    if (p <= 0) {
+      throw new Error("قیمت معتبر نیست.");
+    }
+
     StorageService.set("goldPrice", p);
+    StorageService.set("goldPriceUpdatedAt", Date.now());
+
     return p;
   }
 
-  // Placeholder for future live API integration:
-  // async function fetchFromApi() { const res = await fetch('/api/gold-price'); ... }
+  function shouldUpdate() {
+    const lastUpdate = StorageService.get("goldPriceUpdatedAt", 0);
 
-  return { getCurrentPrice, setCurrentPrice };
+    if (!lastUpdate) return true;
+
+    return Date.now() - lastUpdate >= UPDATE_INTERVAL;
+  }
+
+  async function updatePrice(force = false) {
+    // اگر مجبور به بروزرسانی نیستیم
+    if (!force && !shouldUpdate()) {
+      return getCurrentPrice();
+    }
+
+    try {
+      const response = await fetch(API_URL, {
+        method: "GET",
+        headers: {
+          "x-access-token": API_KEY,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (!data.price) {
+        throw new Error("Gold price not found.");
+      }
+
+      // قیمت اونس
+      const ouncePrice = Number(data.price);
+
+      // هر گرم طلای 24 عیار (تومان)
+      const gram24 = (ouncePrice / 31.1034768) * DOLLAR_PRICE;
+
+      // هر گرم طلای 18 عیار
+      const gram18 = gram24 * 0.75;
+
+      setCurrentPrice(gram18);
+
+      return gram18;
+    } catch (error) {
+      console.error("Gold API Error:", error);
+
+      // اگر قبلاً قیمت ذخیره شده باشد همان را برگردان
+      return getCurrentPrice();
+    }
+  }
+
+  return {
+    getCurrentPrice,
+    setCurrentPrice,
+    updatePrice,
+  };
 })();
 
 /* ============================================================
@@ -2012,11 +2107,12 @@ function seedIfEmpty() {
 /* ============================================================
       16. APP BOOTSTRAP
       ============================================================ */
-function startApp() {
+async function startApp() {
   document.getElementById("loginScreen").classList.add("hidden");
   document.getElementById("appShell").classList.remove("hidden");
   UIRenderer.refreshAll();
   EventManager.switchSection("dashboard");
+  await GoldPriceService.updatePrice();
 }
 
 document.addEventListener("DOMContentLoaded", () => {
